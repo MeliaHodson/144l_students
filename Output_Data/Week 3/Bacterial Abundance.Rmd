@@ -1,0 +1,282 @@
+---
+title: "EEMB 144L 2018 Experiment Bacterial Abundance"
+author: "Melia Hodson"
+date: "10/30/2020"
+output: github_document
+---
+# Intro
+This document shows how *Individual Bottle* bacterial abundance data from the 2018 EEMB 144L experiments was processed, quality controlled, and analyzed. 
+
+```{r Loading Packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(RColorBrewer)
+```
+
+# Import Data
+
+```{r Data for 2018 Experiments}
+excel_sheets("~/Desktop/Github/144L_demo/stuff/Input_Data/week3/144L_2018_BactAbund.xlsx")
+
+metadata <- read_excel("~/Desktop/Github/144L_demo/stuff/Input_Data/week3/144L_2018_BactAbund.xlsx", sheet = "Metadata")
+unique(metadata$Experiment)
+unique(metadata$Location)
+unique(metadata$Bottle)
+unique(metadata$Treatment)
+
+data <- read_excel("~/Desktop/Github/144L_demo/stuff/Input_Data/week3/144L_2018_BactAbund.xlsx", sheet = "Data")
+glimpse(data)
+
+joined <- left_join(metadata,data)
+names(joined)
+summary(joined)
+glimpse(joined)
+```
+
+# Prepare Data
+
+Convert date and time column values from characters to date, add columns with time elapsed during the experiment, convert cells/mL to cells/L, and subset data to select only for variables of interest and drop NA values.
+
+```{r Data Preparation, message=FALSE, warning=FALSE}
+cells <- joined %>% 
+  mutate(Datetime = ymd_hm(Datetime), 
+         cells = Cells_ml * 1000) %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(interv = interval(first(Datetime), Datetime),
+         hours = as.numeric(interv)/3600,
+         days = hours/24) %>% 
+  ungroup() %>% 
+  select(Experiment:DNA_Sample, hours, days, cells) %>% 
+  drop_na()
+  
+glimpse(cells)
+```
+
+# Plot Growth Curves
+
+```{r Growth Curves for the Data Subsets}
+custom.colors <- c("Control" = "black", "Ash Leachate" = "seagreen3", "Mud Leachate" = "dodgerblue", "Glucose_Nitrate_Phosphate" = "darkblue")
+
+levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+cells %>% 
+  mutate(dna = ifelse(DNA_Sample == T, "*",NA)) %>% 
+  ggplot(aes(x = days, y = cells, group = interaction(Treatment, Bottle))) +
+  geom_line(aes(color = factor(Treatment, levels =levels)),size = 1) +
+geom_point(aes(fill = Treatment), size = 3, color = "black", shape = 21) +
+  geom_text(aes(label = dna), size = 12, color = "red") +
+  labs(x = "Days", y = expression(paste("Cells, L"^-1)), fill = "") +
+  guides(color = F) +
+  scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors) +
+  theme_bw()
+
+
+subset <- cells %>% select(Treatment, Bottle, days, cells)
+subset <- cells
+glimpse(subset)
+```
+We can calculate:
+- The total change in cells from the initial condition to the end of the experiment
+- Specific growth rates as the slope of ln(abundance) v time during the exponential growth phase
+- Doubling time as ln(2) divided by the specific growth rate
+- The mean of each of these parameters for each treatment
+
+First we'll need to determine where exponential growth occurs in the experiment, if it does. So next we will plot ln(abundance) v time
+
+
+# Identify Exponential Phase of Growth
+
+```{r Exponential Possibility}
+ln_cells <- cells %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(ln_cells = log(cells),
+         diff_ln_cells = ln_cells - lag(ln_cells, default = first(ln_cells))) %>% 
+  ungroup()
+```
+
+
+```{r Graphing, fig.height=4, fig.width=10, warning=FALSE}
+ln_cells %>% 
+  mutate(dna = ifelse(DNA_Sample == T, "*",NA)) %>% 
+  ggplot(aes(x = days, y = diff_ln_cells, group = interaction(Treatment, Bottle))) +
+  geom_line(aes(color = factor(Treatment, levels =levels)),size = 1) +
+geom_point(aes(fill = Treatment), size = 3, color = "black", shape = 21) +
+  geom_text(aes(label = dna), size = 12, color = "red") +
+  labs(x = "Days", y = expression(paste("Change in ln of Cells, L"^-1)), fill = "") +
+  guides(color = F) +
+  scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors) +
+  theme_bw() + 
+  facet_grid(Location~Bottle, scales = "free")
+```
+
+# Calculating growth rates, delta cell abundances, and doubling Time
+
+- Bottle A ~1-2d (T2-T4)
+- Bottle B ~0-2d (T0-T3)
+- Bottle C ~0-1d (T0-T1)
+- Bottle D ~0-1d (T0-T1)
+- Bottle E ~0-1d (T0-T1)
+- Bottle F ~0-1d (T0-T1)
+- Bottle G ~1-2d (T1-T3)
+- Bottle H ~1-2d (T1-T3)
+
+```{r}
+compare <- ln_cells %>% 
+  select(Treatment, Bottle, Timepoint, days, diff_ln_cells)
+
+growth <- ln_cells %>% 
+  mutate(exp_start = ifelse(Bottle == "A", 2, NA),
+         exp_start = ifelse(Bottle == "B", 1, exp_start),
+         exp_start = ifelse(Bottle %in% c("C", "D", "E", "F"), 1, exp_start),
+         exp_start = ifelse(Bottle %in% c("G", "H"), 2, exp_start),
+         exp_end = ifelse(Bottle %in% c("B", "C"), 3, 1),
+        exp_end = ifelse(Bottle == "A", 4, exp_end)) %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(ln_cells_exp_start = ifelse(Timepoint == exp_start, ln_cells, exp_start),
+         ln_cells_exp_end = ifelse(Timepoint == exp_end, ln_cells, exp_end),
+         cells_exp_start = ifelse(Timepoint == exp_start, cells, exp_start),
+         cells_exp_end = ifelse(Timepoint == exp_end, cells, exp_end),
+         days_exp_start = ifelse(Timepoint == exp_start, days, exp_start),
+         days_exp_end = ifelse(Timepoint == exp_end, days, exp_end),) %>% 
+  fill(ln_cells_exp_start:days_exp_end, .direction = "updown") %>% 
+  mutate(mu = (ln_cells_exp_end - ln_cells_exp_start)/(days_exp_end - days_exp_start),
+         doubling = log(2)/mu,
+         delta_cells = cells_exp_end - first(cells)) %>% 
+  ungroup()
+
+
+check <- growth %>% 
+  select(Experiment, Treatment, Bottle, exp_start, exp_end, ln_cells_exp_start:days_exp_end, mu:delta_cells) +
+
+
+glimpse(growth)
+``` 
+
+# Convert bacterial abundance and change in bacterial abundance to carbon units 
+
+Apply a carbon conversion factor (CCF) to bacterial abundance (cells L^-1^) to generate bacterial carbon (umol C L^-1^)
+
+We'll apply the average carbon content of bacterioplankton cells from Coastal Japan (~30 fg C cell ^-1^), reported by [Fukuda et al., 1998]
+
+This CCF was used in previous experiments conducted in the SBC: [James et al., 2017]
+
+```{r}
+bactcarbon <- growth %>% 
+  mutate(bc = cells * (2.5 * 10^-9),
+         delta_bc = delta_cells * (2.5 * 10^-9))
+glimpse(bactcarbon)
+```
+
+# Calculating Treatment Averages
+
+```{r}
+averages <- bactcarbon %>% 
+  group_by(Treatment, Timepoint) %>% 
+  mutate(ave_bc = mean(bc),
+         sd_bc = sd(bc)) %>% 
+  ungroup() %>% 
+  group_by(Treatment) %>% 
+  mutate(ave_mu = mean(mu),
+         sd_mu = sd(mu),
+        ave_doubling = mean(doubling),
+        sd_doubling = sd(doubling),
+        ave_delta_cells = mean(delta_cells),
+        sd_delta_cells = sd(delta_cells),
+        sd_delta_bc = sd(delta_bc),
+        ave_lag = mean(days_exp_start),
+        sd_lag = sd(days_exp_start)) %>% 
+  ungroup()
+
+glimpse(averages)
+
+subset <- averages %>% 
+  select(Treatment, Bottle, Timepoint, bc, ave_bc, sd_bc)
+```
+
+# Plot Treatmnt Averages
+
+```{r}
+averages %>% 
+  ggplot(aes(x = days, y = ave_bc), group = interaction(Treatment))  + 
+  geom_errorbar(aes(ymin = ave_bc - sd_bc, ymax= ave_bc + sd_bc, color = factor(Treatment, levels = levels)), width = 0.1) +
+  geom_line(aes(color = factor(Treatment, levels = levels)), size = 1) +
+  geom_point(aes(fill = factor(Treatment,levels =levels)), color = "black", shape = 21, size = 3) +
+  facet_grid(Location~Bottle, scales = "free") +
+   scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors, name = "Treatments") +
+  theme_bw() +
+  labs(x = "Days", y = expression(paste("Bacterial Carbon, umol C L"^-1), fill = "", color = "")) +
+    guides(color = F) +
+  ggtitle("Bacterial Abundance Treatment Averages")
+```
+
+## Bar Plots
+
+```{r}
+bar.data <- averages %>% 
+  select(Location, Treatment, ave_mu:sd_lag) %>% 
+  distinct()
+
+glimpse(bar.data)
+```
+
+```{r}
+mu <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_mu), group = interaction(Treatment)) +
+  geom_col(color = "black", fill = "blue") +
+  geom_errorbar(aes(ymin = ave_mu - sd_mu, ymax = ave_mu + sd_mu), width = 0.1) +
+  facet_grid(~factor(Location, levels = levels), scales = "free") +
+  labs(x = "", y = expression("u, d"^-1)) +
+  theme_bw()
+```
+
+```{r}
+doubling <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_doubling), group = interaction(Treatment)) +
+  geom_col(color = "black", fill = "blue") +
+  geom_errorbar(aes(ymin = ave_doubling - sd_doubling, ymax = ave_doubling + sd_doubling), width = 0.1) +
+  facet_grid(~factor(Location, levels = levels), scales = "free") +
+  labs(x = "", y = expression("Doubling Time, d"^-1)) +
+  theme_bw()
+```
+
+```{r}
+delta_bc <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_delta_bc), group = interaction(Treatment)) +
+  geom_col(color = "black", fill = "blue") +
+  geom_errorbar(aes(ymin = ave_delta_bc - sd_delta_bc, ymax = ave_delta_bc + sd_delta_bc), width = 0.1) +
+  facet_grid(~factor(Location, levels = levels), scales = "free") +
+  labs(x = "", y = expression("Delta Bacterial Carbon, umol C L"^-1)) +
+  theme_bw()
+```
+
+```{r}
+lag <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_lag), group = interaction(Treatment)) +
+  geom_col(color = "black", fill = "blue") +
+  geom_errorbar(aes(ymin = ave_lag - sd_lag, ymax = ave_lag + sd_lag), width = 0.1) +
+  facet_grid(~factor(Location, levels = levels), scales = "free") +
+  labs(x = "", y = "Lag Phase, days") +
+  theme_bw()
+```
+
+```{r}
+install.packages("patchwork")
+library(patchwork)
+```
+
+```{r}
+lag + delta_bc + mu + doubling + plot_annotation(tag_levels = "a")
+```
+
+# Saving our Data
+
+```{r}
+saveRDS(averages, "~/Desktop/Github/144L_demo/stuff/Output_Data/Week 3/2018_Processed_Experiment_Data.rds")
+```
+
+
+
