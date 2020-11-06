@@ -111,6 +111,7 @@ geom_point(aes(fill = Treatment), size = 3, color = "black", shape = 21) +
   theme_bw() + 
   facet_grid(Location~Bottle, scales = "free")
 ```
+This graph is showing separation of the different treatments among bottles A- H, and you can see exponential growth within the first two timepoints.
 
 # Calculating growth rates, delta cell abundances, and doubling Time
 
@@ -146,10 +147,6 @@ growth <- ln_cells %>%
          doubling = log(2)/mu,
          delta_cells = cells_exp_end - first(cells)) %>% 
   ungroup()
-
-
-check <- growth %>% 
-  select(Experiment, Treatment, Bottle, exp_start, exp_end, ln_cells_exp_start:days_exp_end, mu:delta_cells) +
 
 
 glimpse(growth)
@@ -264,7 +261,7 @@ lag <- bar.data %>%
 ```
 
 ```{r}
-install.packages("patchwork")
+# install.packages("patchwork")
 library(patchwork)
 ```
 
@@ -278,5 +275,5 @@ lag + delta_bc + mu + doubling + plot_annotation(tag_levels = "a")
 saveRDS(averages, "~/Desktop/Github/144L_demo/stuff/Output_Data/Week 3/2018_Processed_Experiment_Data.rds")
 ```
 
-
+Test
 

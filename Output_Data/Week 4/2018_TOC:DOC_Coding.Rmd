@@ -1,0 +1,140 @@
+---
+title: "2018_TOC"
+author: "Melia Hodson"
+date: "11/3/2020"
+output: github_document
+---
+
+# Intro
+
+This document shows how **individual bottle** TOC/DOC data from 2018 remineralization experiment was processed, quality controlled, and analyzed. 
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+# Import Data
+
+```{r Retreiving Data, message=FALSE, warning=FALSE}
+excel_sheets("~/Desktop/Github/144L_demo/stuff/Input_Data/week4/144L_2018_Exp_TOC.xlsx")
+
+metadata <- read_excel("~/Desktop/Github/144L_demo/stuff/Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Metadata")
+
+data <- read_excel("~/Desktop/Github/144L_demo/stuff/Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Data")
+```
+
+```{r metadata}
+glimpse(metadata)
+```
+
+```{r data}
+glimpse(data)
+```
+
+# Prepare Data
+
+```{r}
+joined <- left_join(metadata,data)
+
+toc <- joined %>% 
+  mutate(Datetime = ymd_hm(Datetime)) %>% 
+  group_by(Bottle) %>% 
+  mutate(interv = interval(first(Datetime), Datetime),
+         hours = as.numeric(interv)/3600,
+         days = hours/24) %>% 
+  rename(sd_TOC = TOC_sd,
+         sd_PTOC = PTOC_sd) %>% 
+  ungroup() %>% 
+  select(Experiment:Datetime, hours, days, everything(), -c(contains("Sample")), interv)
+
+```
+
+```{r}
+glimpse(toc)
+```
+
+# Plot the curves
+
+## Pivot Data
+
+```{r}
+pivot_toc <- toc %>% 
+  select(Bottle, Treatment, days, TOC, PTOC) %>% 
+  pivot_longer(TOC:PTOC, names_to = "sample", values_to = "values")
+
+pivot_toc_sd <- toc %>% 
+  select(Bottle, Treatment, days, sd_TOC, sd_PTOC) %>% 
+  pivot_longer(sd_TOC:sd_PTOC, names_to = "sample", names_prefix = "sd_", values_to = "sd")
+
+pivoted <- left_join(pivot_toc,pivot_toc_sd) %>% 
+  mutate(sample = ifelse(sample == "TOC", "Bottle", "Vial"))
+
+glimpse(pivoted)
+```
+
+## Plot
+
+```{r fig.height=7, fig.width=8}
+custom.colors <- c("Control" = "black", "Ash Leachate" = "royalblue3", "Mud Leachate" = "lawngreen", "Glucose_Nitrate_Phosphate" = "tan1", "Vial" = "hotpink2", "Bottle" = "forestgreen")
+
+levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate", "Bottle", "Vial")
+
+pivoted %>% 
+  drop_na(values) %>% 
+  mutate(Treatment = factor(Treatment, levels = levels),
+         sample = factor(sample, levels)) %>% 
+  ggplot(aes(x = days, y = values, group = interaction(Treatment, Bottle))) +
+  geom_errorbar(aes(ymin = values - sd, ymax = values + sd, color = sample), width = 0.4) +
+  geom_point(aes(fill = sample), size = 3, shape = 21, alpha = 0.7) +
+  scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors) +
+  labs(x = "Days", y = expression("Total Organic Carbon, umol C L"^-1), color = "", fill = "") +
+  theme_bw() +
+  facet_grid(rows = "Treatment", scales = "free") +
+  guides(color = F) +
+  ggtitle("TOC and PTOC Treatment Values and \nStandard Deviations")
+```
+
+The analytical detection limit for our TOC analysis is ~1.5 umol C L^-1^.
+
+# TOC v PTOC (bottle v vial samples)
+
+```{r message=FALSE, warning=FALSE}
+# install.packages("lmodel2")
+library(lmodel2)
+
+reg.data <- toc %>% 
+  drop_na(TOC) %>% 
+  filter(Timepoint > 0) 
+
+reg <- lmodel2(PTOC ~ TOC, data = reg.data, nperm = 99) 
+```
+
+```{r}
+reg
+```
+```{r}
+intercept <- reg$regression.results[3,2]
+slope <- reg$regression.results[3,3]
+
+two_int <- reg$confidence.intervals[3,2]
+two_slope <- reg$confidence.intervals[3,4]
+nine_int <- reg$confidence.intervals[3,3]
+nine_slope <- reg$confidence.intervals[3,5]
+```
+
+```{r}
+reg.data %>% 
+  ggplot(aes(x = TOC, y = PTOC)) +
+  geom_errorbar(aes(ymin = PTOC - sd_PTOC, ymax = PTOC + sd_PTOC), width = 0.05) +
+  geom_point(shape = 21, size = 4, alpha = 0.7) +
+  geom_abline(intercept = intercept, slope = slope, color = "black", linetype = 3, size = 1) +
+  geom_abline(intercept = two_int, slope = two_slope, color = "black", linetype = 3, size = 1) +
+  geom_abline(intercept = nine_int, slope = nine_slope, color = "black", linetype = 3, size = 1) +
+  labs(x = expression("Bottle TOC, umol C L"^-1), y = expression("Vial TOC umol C L"^-1)) +
+  theme_bw() +
+  annotate(geom = "text", label = expression(atop("y = 0.72x + 19.8", paste("r"^2, "0.97", italic("p"), "= 0.01"))), x = 70, y = 74, size = 4)
+```
+
