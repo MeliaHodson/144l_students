@@ -130,11 +130,168 @@ reg.data %>%
   ggplot(aes(x = TOC, y = PTOC)) +
   geom_errorbar(aes(ymin = PTOC - sd_PTOC, ymax = PTOC + sd_PTOC), width = 0.05) +
   geom_point(shape = 21, size = 4, alpha = 0.7) +
-  geom_abline(intercept = intercept, slope = slope, color = "black", linetype = 3, size = 1) +
+  geom_abline(intercept = intercept, slope = slope, linetype = 2, size = 1) +
   geom_abline(intercept = two_int, slope = two_slope, color = "black", linetype = 3, size = 1) +
   geom_abline(intercept = nine_int, slope = nine_slope, color = "black", linetype = 3, size = 1) +
   labs(x = expression("Bottle TOC, umol C L"^-1), y = expression("Vial TOC umol C L"^-1)) +
   theme_bw() +
-  annotate(geom = "text", label = expression(atop("y = 0.72x + 19.8", paste("r"^2, "0.97", italic("p"), "= 0.01"))), x = 70, y = 74, size = 4)
+  annotate(geom = "text", label = expression(atop("y = 1.03x - 2.12", paste("r"^2, "= 0.922", italic(", p"), "= 0.01"))), x = 81, y = 88, size = 4)
+```
+This graph looks at the relative concentrations of TOC in the bottle samples versus the vial samples. There appears to be a linear relationship between the two.
+
+```{r}
+bc <- read_rds("~/Desktop/Github/144L_demo/stuff/Output_Data/Week 3/2018_Processed_Experiment_Data.rds")
+
+merge <- left_join(toc, bc) %>% 
+  select(Experiment:days, TOC:sd_PTOC, cells:diff_ln_cells, bc, ave_bc, sd_bc, everything(), - c(contains("Sample"))) %>% 
+  group_by(Treatment, Bottle) %>% 
+  fill(exp_start:sd_lag) %>% 
+  ungroup()
+
+glimpse(merge)
+
+subset <- merge %>% 
+  select(Experiment, Treatment, Bottle, days, PTOC, bc)
+```
+
+# Interpolate
+
+```{r message=FALSE, warning=FALSE}
+# install.packages("zoo")
+library(zoo)
+```
+
+We only want to interpolate within an experiment and not across experiments, so we'll perform the interpolation by using the split - apply - combine strategy
+- Split the dataframe into a list of its elements(in this case treatment and bottles)
+- Apply the dataframe into a list of its elements
+- Combine the results into a new dataframe
+
+## Split
+
+```{r}
+to_interpolate <- merge %>% 
+  select(Experiment, Bottle, Timepoint, days, PTOC, bc) %>% 
+  group_by(Bottle)
+
+list <- to_interpolate %>% 
+  group_split()
+
+keys <- to_interpolate %>% 
+  group_keys() %>% 
+  mutate(key = paste(Bottle))
+
+names(list) <- keys$key
+```
+
+## Write the Function
+
+```{r}
+interp.fxn <- function(x) {
+  y <- zoo(x, order.by = z$days)
+  interp_toc <- round(as.numeric(na.approx(y$PTOC, na.rm = F)), 1)
+  interp_bc <- round(as.numeric(na.approx(y$bc, na.rm = F)), 1)
+  z <- cbind(y, interp_toc, interp_bc)
+  as_tibble(z)}
+
+glimpse(interp.fxn)
+```
+
+## Apply and Combine
+
+```{r}
+interpolated <- lapply(list, interp.fxn) %>% 
+  plyr::ldyply(., as.data.frame) %>% 
+  select(-c(.id, PTOC, bc, days)) %>% 
+  mutate_at(vars(Timepoint:interp_bc), as.numeric) %>% 
+  left_join(merge, .)
+
+glimpse(interpolated)
+```
+
+# Estimate DOC, Bioavailablity, BGE's
+
+```{r}
+doc <- interpolated %>% 
+  mutate(doc = interp_toc - interp_bc) %>% 
+  group_by(Bottle) %>% 
+  mutate(bioav_doc = first(doc) - last(na.omit(doc)) / first(doc),
+         doc_exp_end = ifelse(Timepoint == exp_end, doc, NA),
+         delta_doc = first(doc) - doc_exp_end,
+         tdelta_doc = first(doc) - last(na.omit(doc)),
+         bge = ifelse(delta_doc > 1.5, dellta_bc / delta_doc, NA)) %>% 
+  fill(doc_exp_end:bge, .direction = "downup") %>% 
+  ungroup()
+
+glimpse(doc)
+```
+
+# Treatment Averages
+
+```{r}
+averages <- doc %>% 
+  group_by(Treatment, Timepoint) %>% 
+  mutate(ave_toc = mean(PTOC),
+         sd_toc = sd(PTOC)) %>% 
+  ungroup() %>% 
+  group_by(Treatment) %>% 
+  mutate(ave_bioav_doc = mean(bioav_doc),
+         sd_bioav_doc = sd(bioav_doc),
+         ave_delta_doc = mean(delta_doc),
+         sd_delta_doc = sd(delta_doc),
+         ave_tdelta_doc = mean(tdelta_doc),
+         sd_tdelta_doc = sd(tdelta_doc),
+         ave_bge = mean(bge),
+         sd_bge = sd(bge)) %>% 
+  ungroup()
+```
+
+# Plot Treatment Curves
+
+```{r}
+averages %>% 
+  mutate(Treatment = factor(Treatment, levels = levels)) %>% 
+  drop_na(ave_toc) %>% 
+  ggplot(aes(x = days, y = ave_toc, group = interaction(Treatment))) +
+  geom_errorbar(aes(ymin = ave_toc - sd_toc, ymax = ave_toc + sd_toc, color = Treatment), width = 0.4) +
+  geom_point(aes(fill = Treatment), size = 3, shape = 21, alpha = 0.7) +
+  geom_line(aes(color = Treatment), size = 1, alpha = 0.7) +
+  scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors) +
+  labs(x = "Days", y = expression("Total Organic Carbon, umol C L"^-1), color = "", fill = "") +
+  theme_bw() +
+  facet_grid(rows = "Treatment", scales = "free") +
+  guides(color = F) +
+  ggtitle("Treatment Averages Dependent and Independent /nof Timepoint")
+```
+
+# Plot Treatment Averages (Bars)
+
+```{r}
+bar.data <- averages %>% 
+  select(Treatment, ave_bioav_doc:sd_bge) %>% 
+  distinct()
+```
+
+```{r}
+bioav <- bar.data %>% 
+  ggpolt(aes(x = factor(Treatment, levels = levels), y = ave_bioav_doc, group = interaction(Treatment))) +
+  geom_col(color = "black", fill = "white", alpha = 0.7) +
+  geom_errorbar(aes(ymin = ave_bioav_doc - sd_bioav_doc, ymax = ave_bioav_doc + sd_bioav_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Bioavailible DOC Fraction")), color = "") +
+  theme_bw()
+```
+
+```{r}
+library(patchwork)
+```
+
+```{r}
+del_doc / total_doc / bioav / bge + plot_annotation(title = "2018 144L Experiments", tag_levels = "a")
+```
+
+# Save Data
+
+```{r}
+saveRDS(averages, "~/Desktop/Github/144L_demo/stuff/Output_Data/Week 4/2018_Experiment_Processed_DOC_BGE.Rmd")
 ```
 
