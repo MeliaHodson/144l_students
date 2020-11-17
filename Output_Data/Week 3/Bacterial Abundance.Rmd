@@ -129,19 +129,15 @@ compare <- ln_cells %>%
   select(Treatment, Bottle, Timepoint, days, diff_ln_cells)
 
 growth <- ln_cells %>% 
-  mutate(exp_start = ifelse(Bottle == "A", 2, NA),
-         exp_start = ifelse(Bottle == "B", 1, exp_start),
-         exp_start = ifelse(Bottle %in% c("C", "D", "E", "F"), 1, exp_start),
-         exp_start = ifelse(Bottle %in% c("G", "H"), 2, exp_start),
-         exp_end = ifelse(Bottle %in% c("B", "C"), 3, 1),
-        exp_end = ifelse(Bottle == "A", 4, exp_end)) %>% 
+  mutate(exp_start = 0,
+         exp_end = ifelse(!Bottle %in% c("G", "H"), 1, 2)) %>% 
   group_by(Treatment, Bottle) %>% 
-  mutate(ln_cells_exp_start = ifelse(Timepoint == exp_start, ln_cells, exp_start),
-         ln_cells_exp_end = ifelse(Timepoint == exp_end, ln_cells, exp_end),
-         cells_exp_start = ifelse(Timepoint == exp_start, cells, exp_start),
-         cells_exp_end = ifelse(Timepoint == exp_end, cells, exp_end),
-         days_exp_start = ifelse(Timepoint == exp_start, days, exp_start),
-         days_exp_end = ifelse(Timepoint == exp_end, days, exp_end),) %>% 
+  mutate(ln_cells_exp_start = ifelse(Timepoint == exp_start, ln_cells, NA),
+         ln_cells_exp_end = ifelse(Timepoint == exp_end, ln_cells, NA),
+         cells_exp_start = ifelse(Timepoint == exp_start, cells, NA),
+         cells_exp_end = ifelse(Timepoint == exp_end, cells, NA),
+         days_exp_start = ifelse(Timepoint == exp_start, days, NA),
+         days_exp_end = ifelse(Timepoint == exp_end, days, NA),) %>% 
   fill(ln_cells_exp_start:days_exp_end, .direction = "updown") %>% 
   mutate(mu = (ln_cells_exp_end - ln_cells_exp_start)/(days_exp_end - days_exp_start),
          doubling = log(2)/mu,
@@ -182,6 +178,7 @@ averages <- bactcarbon %>%
         sd_doubling = sd(doubling),
         ave_delta_cells = mean(delta_cells),
         sd_delta_cells = sd(delta_cells),
+        ave_delta_bc = mean(delta_bc),
         sd_delta_bc = sd(delta_bc),
         ave_lag = mean(days_exp_start),
         sd_lag = sd(days_exp_start)) %>% 
@@ -201,7 +198,6 @@ averages %>%
   geom_errorbar(aes(ymin = ave_bc - sd_bc, ymax= ave_bc + sd_bc, color = factor(Treatment, levels = levels)), width = 0.1) +
   geom_line(aes(color = factor(Treatment, levels = levels)), size = 1) +
   geom_point(aes(fill = factor(Treatment,levels =levels)), color = "black", shape = 21, size = 3) +
-  facet_grid(Location~Bottle, scales = "free") +
    scale_color_manual(values = custom.colors) +
   scale_fill_manual(values = custom.colors, name = "Treatments") +
   theme_bw() +
@@ -225,7 +221,6 @@ mu <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y = ave_mu), group = interaction(Treatment)) +
   geom_col(color = "black", fill = "blue") +
   geom_errorbar(aes(ymin = ave_mu - sd_mu, ymax = ave_mu + sd_mu), width = 0.1) +
-  facet_grid(~factor(Location, levels = levels), scales = "free") +
   labs(x = "", y = expression("u, d"^-1)) +
   theme_bw()
 ```
@@ -235,7 +230,6 @@ doubling <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y = ave_doubling), group = interaction(Treatment)) +
   geom_col(color = "black", fill = "blue") +
   geom_errorbar(aes(ymin = ave_doubling - sd_doubling, ymax = ave_doubling + sd_doubling), width = 0.1) +
-  facet_grid(~factor(Location, levels = levels), scales = "free") +
   labs(x = "", y = expression("Doubling Time, d"^-1)) +
   theme_bw()
 ```
@@ -245,7 +239,6 @@ delta_bc <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y = ave_delta_bc), group = interaction(Treatment)) +
   geom_col(color = "black", fill = "blue") +
   geom_errorbar(aes(ymin = ave_delta_bc - sd_delta_bc, ymax = ave_delta_bc + sd_delta_bc), width = 0.1) +
-  facet_grid(~factor(Location, levels = levels), scales = "free") +
   labs(x = "", y = expression("Delta Bacterial Carbon, umol C L"^-1)) +
   theme_bw()
 ```
@@ -255,7 +248,6 @@ lag <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y = ave_lag), group = interaction(Treatment)) +
   geom_col(color = "black", fill = "blue") +
   geom_errorbar(aes(ymin = ave_lag - sd_lag, ymax = ave_lag + sd_lag), width = 0.1) +
-  facet_grid(~factor(Location, levels = levels), scales = "free") +
   labs(x = "", y = "Lag Phase, days") +
   theme_bw()
 ```
@@ -266,7 +258,7 @@ library(patchwork)
 ```
 
 ```{r}
-lag + delta_bc + mu + doubling + plot_annotation(tag_levels = "a")
+delta_bc + mu + doubling + plot_annotation(tag_levels = "a")
 ```
 
 # Saving our Data

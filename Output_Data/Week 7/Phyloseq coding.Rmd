@@ -1,0 +1,41 @@
+---
+title: "Phyloseq"
+author: "Melia Hodson"
+date: "11/17/2020"
+output: github_document
+---
+# Intro
+
+We explore the processed 2018 sequences using [phyloseq](https://joey711.github.io/phyloseq/)
+
+# Install phyloseq
+
+```{r}
+# BiocManager::install("phyloseq")
+```
+
+```{r message=F, warning=F}
+library(tidyverse)
+library(phyloseq)
+library(RColorBrewer)
+```
+
+# Import Data
+
+```{r}
+count.tab <- read_rds("~/Desktop/Github/144L_demo/stuff/Input_Data/week6/seqtab-nochimtaxa.rds")
+# Table of counts for each sequence in each sample
+tax.tab <- read_rds("~/Desktop/Github/144L_demo/stuff/Input_Data/week6/taxa.rds")
+# Table that matches ASV to sequence
+sample.tab <- read_rds("~/Desktop/Github/144L_demo/stuff/Output_Data/Week 3/2018_Processed_Experiment_Data.rds")
+```
+
+
+
+
+
+
+
+
+
+
