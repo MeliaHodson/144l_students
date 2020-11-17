@@ -300,10 +300,10 @@ total_del_doc <- bar.data %>%
 
 ```{r}
 bge <- bar.data %>% 
-  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_bioav_doc, group = interaction(Treatment))) +
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_bge, group = interaction(Treatment))) +
   geom_col(color = "black", fill = "white", alpha = 0.7) +
-  geom_errorbar(aes(ymin = ave_bioav_doc - sd_bioav_doc, ymax = ave_bioav_doc + sd_bioav_doc), width = 0.1, size = 0.5) +
-  labs(x = "", y = expression(paste("Bioavailible DOC Fraction")), color = "") +
+  geom_errorbar(aes(ymin = ave_bge - sd_bge, ymax = ave_bge + sd_bge), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Bacterial Growth Efficiency")), color = "") +
   theme_bw()
 ```
 
@@ -312,7 +312,7 @@ library(patchwork)
 ```
 
 ```{r}
-deldoc / total_deldoc / bioav / bge + plot_annotation(title = "2018 144L Experiments", tag_levels = "a")
+del_doc / total_del_doc / bioav / bge + plot_annotation(title = "2018 144L Experiments", tag_levels = "a")
 ```
 
 # Save Data
