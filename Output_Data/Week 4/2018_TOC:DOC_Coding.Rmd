@@ -187,7 +187,7 @@ names(list) <- keys$key
 
 ```{r}
 interp.fxn <- function(x) {
-  y <- zoo(x, order.by = z$days)
+  y <- zoo(x, order.by = x$days)
   interp_toc <- round(as.numeric(na.approx(y$PTOC, na.rm = F)), 1)
   interp_bc <- round(as.numeric(na.approx(y$bc, na.rm = F)), 1)
   z <- cbind(y, interp_toc, interp_bc)
@@ -200,7 +200,7 @@ glimpse(interp.fxn)
 
 ```{r}
 interpolated <- lapply(list, interp.fxn) %>% 
-  plyr::ldyply(., as.data.frame) %>% 
+  plyr::ldply(., as.data.frame) %>% 
   select(-c(.id, PTOC, bc, days)) %>% 
   mutate_at(vars(Timepoint:interp_bc), as.numeric) %>% 
   left_join(merge, .)
@@ -218,7 +218,7 @@ doc <- interpolated %>%
          doc_exp_end = ifelse(Timepoint == exp_end, doc, NA),
          delta_doc = first(doc) - doc_exp_end,
          tdelta_doc = first(doc) - last(na.omit(doc)),
-         bge = ifelse(delta_doc > 1.5, dellta_bc / delta_doc, NA)) %>% 
+         bge = ifelse(delta_doc > 1.5, delta_bc / delta_doc, NA)) %>% 
   fill(doc_exp_end:bge, .direction = "downup") %>% 
   ungroup()
 
@@ -259,7 +259,6 @@ averages %>%
   scale_fill_manual(values = custom.colors) +
   labs(x = "Days", y = expression("Total Organic Carbon, umol C L"^-1), color = "", fill = "") +
   theme_bw() +
-  facet_grid(rows = "Treatment", scales = "free") +
   guides(color = F) +
   ggtitle("Treatment Averages Dependent and Independent /nof Timepoint")
 ```
@@ -274,7 +273,34 @@ bar.data <- averages %>%
 
 ```{r}
 bioav <- bar.data %>% 
-  ggpolt(aes(x = factor(Treatment, levels = levels), y = ave_bioav_doc, group = interaction(Treatment))) +
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_bioav_doc, group = interaction(Treatment))) +
+  geom_col(color = "black", fill = "white", alpha = 0.7) +
+  geom_errorbar(aes(ymin = ave_bioav_doc - sd_bioav_doc, ymax = ave_bioav_doc + sd_bioav_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Bioavailible DOC Fraction")), color = "") +
+  theme_bw()
+```
+
+```{r}
+del_doc <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_delta_doc, group = interaction(Treatment))) +
+  geom_col(color = "black", fill = "white", alpha = 0.7) +
+  geom_errorbar(aes(ymin = ave_delta_doc - sd_delta_doc, ymax = ave_delta_doc + sd_delta_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Delta DOC (to stationary), umol C L"^-1)), color = "") +
+  theme_bw()
+```
+
+```{r}
+total_del_doc <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_tdelta_doc, group = interaction(Treatment))) +
+  geom_col(color = "black", fill = "white", alpha = 0.7) +
+  geom_errorbar(aes(ymin = ave_tdelta_doc - sd_tdelta_doc, ymax = ave_tdelta_doc + sd_tdelta_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Delta DOC (total), umol C L"^-1)), color = "") +
+  theme_bw()
+```
+
+```{r}
+bge <- bar.data %>% 
+  ggplot(aes(x = factor(Treatment, levels = levels), y = ave_bioav_doc, group = interaction(Treatment))) +
   geom_col(color = "black", fill = "white", alpha = 0.7) +
   geom_errorbar(aes(ymin = ave_bioav_doc - sd_bioav_doc, ymax = ave_bioav_doc + sd_bioav_doc), width = 0.1, size = 0.5) +
   labs(x = "", y = expression(paste("Bioavailible DOC Fraction")), color = "") +
@@ -286,7 +312,7 @@ library(patchwork)
 ```
 
 ```{r}
-del_doc / total_doc / bioav / bge + plot_annotation(title = "2018 144L Experiments", tag_levels = "a")
+deldoc / total_deldoc / bioav / bge + plot_annotation(title = "2018 144L Experiments", tag_levels = "a")
 ```
 
 # Save Data
