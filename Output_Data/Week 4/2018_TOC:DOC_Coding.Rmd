@@ -260,7 +260,7 @@ averages %>%
   labs(x = "Days", y = expression("Total Organic Carbon, umol C L"^-1), color = "", fill = "") +
   theme_bw() +
   guides(color = F) +
-  ggtitle("Treatment Averages Dependent and Independent /nof Timepoint")
+  ggtitle("Treatment Averages Dependent and Independent \nof Timepoint")
 ```
 
 # Plot Treatment Averages (Bars)
